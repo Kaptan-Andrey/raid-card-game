@@ -88,14 +88,14 @@ public class GameManager : NetworkBehaviour
         // 1 Рейдер -> зона Рейдера, остальных Рейдеров убрать в сброс
         int rIdx = -1;
         for (int i = 0; i < settlerDeck.Count; i++)
-            if (settlerDeck[i].cardName == "Рейдер") { rIdx = i; break; }
+            if (CardDatabase.IsReider(settlerDeck[i].cardName)) { rIdx = i; break; }
         if (rIdx >= 0)
         {
             reiderTarget.Add(settlerDeck[rIdx]);
             settlerDeck.RemoveAt(rIdx);
         }
         for (int i = settlerDeck.Count - 1; i >= 0; i--)
-            if (settlerDeck[i].cardName == "Рейдер")
+            if (CardDatabase.IsReider(settlerDeck[i].cardName))
             {
                 discard.Add(settlerDeck[i]);
                 settlerDeck.RemoveAt(i);
