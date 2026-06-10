@@ -26,7 +26,13 @@ public static class CardDatabase
         Add(deck, ref id, 4, "Арош Людоедов", Tribe.Ogres, 3); // только племенное свойство
 
         // ---- Большое племя ЗВЕРИ (19) ----
-        Add(deck, ref id, 3, "Шабаш Зверей", Tribe.Beasts, 3);   // TODO: реальная сила
+        // Шабаш Зверей — карта типа Магия (без силы), значок 1 Светлого зерна.
+        // Накладывается на своего пленного у Зверей; даёт тратить 1 зерно его цвета
+        // каждый ход, при этом пленный не прокручивается и не копит зёрна.
+        // magicGrains = [dark,light,calm] = 1 светлое (даётся при сбросе ради зёрен).
+        // TODO: основной эффект (наложение на пленного) не реализован.
+        Add(deck, ref id, 3, "Шабаш Зверей", Tribe.Beasts, 0, type: CardType.Magic,
+            magicGrains: new int[] { 0, 1, 0 });
         Add(deck, ref id, 2, "Ночной Кошмар", Tribe.Beasts, 4);
         Add(deck, ref id, 4, "Обжора", Tribe.Beasts, 1);
         Add(deck, ref id, 10, "Щенок", Tribe.Beasts, 2);
@@ -82,17 +88,19 @@ public static class CardDatabase
     public static bool IsReider(string name) =>
         name == "Мыслав" || name == "Морра" || name == "Габи";
 
-    static void Add(List<CardData> deck, ref int id, int count, string name, Tribe tribe, int strength, bool adferous = false)
+    static void Add(List<CardData> deck, ref int id, int count, string name, Tribe tribe, int strength,
+                    bool adferous = false, CardType type = CardType.Monster, int[] magicGrains = null)
     {
         for (int i = 0; i < count; i++)
             deck.Add(new CardData
             {
                 id = id++,
                 cardName = name,
-                cardType = CardType.Monster,
+                cardType = type,
                 tribe = tribe,
                 strength = strength,
                 isAdferous = adferous,
+                magicGrains = magicGrains == null ? null : (int[])magicGrains.Clone(),
                 attachedToId = 0,
                 isDefender = false
             });
