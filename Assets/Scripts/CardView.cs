@@ -13,15 +13,19 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     [HideInInspector] public CardData data;   // данные карты для отрисовки (если карта лицом)
 
     [Header("Визуал карты (все поля необязательны — заполняй те, что есть на префабе)")]
-    public GameObject faceRoot;          // вся лицевая часть карты
-    public GameObject backRoot;          // рубашка (показывается у чужих/колоды)
+    public Image artworkImage;           // КАРТИНКА карты (подбирается по имени из CardArtDatabase)
+    public TMP_Text maturityText;        // индикатор созревания пленного, напр. "2/3"
+    public GameObject selectionBorder;   // рамка/подсветка выбора в отряд
+    public GameObject defenderMark;      // значок "карта стоит в Защите"
+    public GameObject faceRoot;          // вся лицевая часть карты (если делаешь флип лицо/рубашка)
+    public GameObject backRoot;          // рубашка (если флип на этом же префабе)
+
+    [Header("Тексты (НЕ нужны, если на картинке всё нарисовано)")]
     public TMP_Text nameText;            // имя карты
     public TMP_Text strengthText;        // сила (число в углу)
     public TMP_Text tribeTypeText;       // племя / тип
     public TMP_Text grainsText;          // сводка зёрен ("●2 ○1")
-    public Image backgroundImage;        // фон — красим по племени/типу
-    public GameObject defenderMark;      // значок "карта стоит в Защите"
-    public GameObject selectionBorder;   // рамка/подсветка выбора в отряд
+    public Image backgroundImage;        // фон — красим по племени/типу (если нет картинки)
 
     private Canvas canvas;
     private RectTransform rectTransform;
@@ -45,6 +49,23 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
         ShowFace();
 
+        // Картинка карты (приоритетный способ отображения)
+        if (artworkImage)
+        {
+            Sprite art = CardArtDatabase.Get(card.cardName);
+            if (art != null) artworkImage.sprite = art;
+        }
+
+        // Индикатор созревания: только у поселенцев с трекером зёрен
+        if (maturityText)
+        {
+            int max = card.grainSequence != null ? card.grainSequence.Length : 0;
+            bool showMaturity = card.cardType == CardType.Settler && card.attachedToId == 0 && max > 0;
+            maturityText.gameObject.SetActive(showMaturity);
+            if (showMaturity) maturityText.text = card.grainRotationSteps + "/" + max;
+        }
+
+        // Тексты — заполняются, только если они есть на префабе
         if (nameText) nameText.text = card.cardName;
         if (strengthText) strengthText.text = card.cardType == CardType.Magic ? "" : card.strength.ToString();
         if (tribeTypeText) tribeTypeText.text = TribeTypeLabel(card);
