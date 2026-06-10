@@ -30,9 +30,29 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI phaseText;
     public Button endTurnButton;
 
+    [Header("Боевой UI (необязательные ссылки)")]
+    public TextMeshProUGUI squadInfoText;   // строка про выбранный отряд: племя, сила, цель
+    public TextMeshProUGUI messageText;      // сообщения игроку (ошибки/подсказки)
+    public Button reinforceButton;           // переключить режим: Атака / Усилить защиту
+    public Button cancelButton;              // сбросить выбор отряда и режим
+
+    [Header("Окно выбора трофея (необязательное)")]
+    public GameObject trophyPanel;           // панель, по умолчанию выключена
+    public TextMeshProUGUI trophyPromptText; // текст про текущего пленного
+    public Button trophyKillButton;          // "Убить"
+    public Button trophyMagicButton;         // "Использовать магию"
+
     private Dictionary<int, CardView> activeCards = new Dictionary<int, CardView>();
     private CardView deckIndicator; // объект-рубашка для колоды
     private HashSet<int> selectedSquad = new HashSet<int>(); // выбранные карты руки для атаки
+
+    private enum ActionMode { Attack, Reinforce }
+    private ActionMode mode = ActionMode.Attack;
+
+    // Очередь спелых пленных для окна трофея
+    private Player trophyPlayer;
+    private List<int> trophyQueue = new List<int>();
+    private Coroutine messageRoutine;
 
     void Awake()
     {
@@ -62,15 +82,31 @@ public class UIManager : MonoBehaviour
         SyncZoneFromList(DiscardContainer, GameManager.Instance.discard, ZoneType.Discard);
         UpdateDeckIndicator();
 
-        // Назначаем обработчик кнопки
+        // Назначаем обработчики кнопок
+        WireBattleButtons();
+        if (trophyPanel != null) trophyPanel.SetActive(false);
         StartCoroutine(WaitForClientAndAssignButton());
-        // Тест: создать одну карту в руке напрямую
-        if (cardPrefab != null && Player1HandContainer != null)
-        {
-            GameObject testCard = Instantiate(cardPrefab, Player1HandContainer);
-            testCard.GetComponent<RectTransform>().anchoredPosition = Vector2.zero;
-            Debug.Log("Test card created");
-        }
+    }
+
+    void WireBattleButtons()
+    {
+        if (reinforceButton != null)
+            reinforceButton.onClick.AddListener(ToggleMode);
+        if (cancelButton != null)
+            cancelButton.onClick.AddListener(() => { ClearSquad(); mode = ActionMode.Attack; UpdateSquadInfo(); });
+
+        if (trophyKillButton != null)
+            trophyKillButton.onClick.AddListener(() => ResolveCurrentTrophy(TrophyChoice.Kill));
+        if (trophyMagicButton != null)
+            trophyMagicButton.onClick.AddListener(() => ResolveCurrentTrophy(TrophyChoice.UseMagic));
+
+        UpdateSquadInfo();
+    }
+
+    void ToggleMode()
+    {
+        mode = mode == ActionMode.Attack ? ActionMode.Reinforce : ActionMode.Attack;
+        UpdateSquadInfo();
     }
 
     IEnumerator WaitForClientAndAssignButton()
@@ -111,36 +147,60 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    // ---- Выбор отряда и атака (клик в фазе действий) ----
+    // ---- Выбор отряда, атака и усиление (клик в фазе действий) ----
     public void HandleActionClick(CardView view, Player localPlayer)
     {
         if (GameManager.Instance == null) return;
-        if (GameManager.Instance.players.IndexOf(localPlayer) != GameManager.Instance.currentPlayerIndex) return;
+        if (GameManager.Instance.players.IndexOf(localPlayer) != GameManager.Instance.currentPlayerIndex)
+        { Msg("Сейчас не ваш ход."); return; }
 
         ZoneType myHand = localPlayer.playerIndex == 0 ? ZoneType.Player1Hand : ZoneType.Player2Hand;
+        ZoneType myField = localPlayer.playerIndex == 0 ? ZoneType.Player1Field : ZoneType.Player2Field;
 
         // Клик по своей карте руки — добавить/убрать из отряда
         if (view.currentZone == myHand)
         {
             ToggleSquad(view);
+            UpdateSquadInfo();
             return;
         }
 
-        // Клик по цели — атаковать выбранным отрядом
         int[] squad = SquadArray();
-        if (squad.Length == 0) { Debug.Log("Сначала выберите карты отряда (клик по руке)."); return; }
+        if (squad.Length == 0) { Msg("Сначала выберите карты отряда (клик по своей руке)."); return; }
 
+        // --- Режим усиления защиты: цель — свой пленный ---
+        if (mode == ActionMode.Reinforce)
+        {
+            if (view.currentZone == myField && view.data.cardType == CardType.Settler && view.data.attachedToId == 0)
+            {
+                localPlayer.CmdReinforce(view.cardId, squad);
+                Msg("Усиление отправлено на пленного «" + view.data.cardName + "».");
+            }
+            else Msg("Для усиления кликните по СВОЕМУ пленному (поселенцу).");
+            return;
+        }
+
+        // --- Режим атаки: цель — Рейд или пленный противника ---
         if (view.currentZone == ZoneType.Reid || view.currentZone == ZoneType.Reider)
         {
+            WarnIfWeak(squad, view.data.strength, "цели");
             localPlayer.CmdAttack(squad, view.currentZone, view.cardId, -1);
-            ClearSquad();
+            Msg("Атака на «" + view.data.cardName + "» (сила цели " + view.data.strength + ").");
         }
         else if (view.currentZone == ZoneType.Player1Field || view.currentZone == ZoneType.Player2Field)
         {
             int targetPlayerIndex = view.currentZone == ZoneType.Player1Field ? 0 : 1;
-            if (targetPlayerIndex == localPlayer.playerIndex) return; // свой пленный — не цель атаки
+            if (targetPlayerIndex == localPlayer.playerIndex) { Msg("Это ваш пленный — атаковать нельзя."); return; }
+            if (view.data.cardType != CardType.Settler || view.data.attachedToId != 0)
+            { Msg("Перехватывать можно только пленного-поселенца."); return; }
+
+            WarnIfWeak(squad, view.data.strength, "защиты");
             localPlayer.CmdAttack(squad, view.currentZone, view.cardId, targetPlayerIndex);
-            ClearSquad();
+            Msg("Перехват «" + view.data.cardName + "».");
+        }
+        else
+        {
+            Msg("Это не цель для атаки.");
         }
     }
 
@@ -160,8 +220,7 @@ public class UIManager : MonoBehaviour
 
     int[] SquadArray()
     {
-        var list = new List<int>(selectedSquad);
-        return list.ToArray();
+        return new List<int>(selectedSquad).ToArray();
     }
 
     void ClearSquad()
@@ -169,6 +228,93 @@ public class UIManager : MonoBehaviour
         foreach (int id in selectedSquad)
             if (activeCards.TryGetValue(id, out CardView v) && v != null) v.SetSelected(false);
         selectedSquad.Clear();
+    }
+
+    // Сумма базовой силы выбранного отряда + единое ли племя (для подсказки).
+    void SquadStats(out int count, out int baseStrength, out bool sameTribe, out string tribeName)
+    {
+        count = 0; baseStrength = 0; sameTribe = true; tribeName = "";
+        Tribe first = Tribe.Basic; bool firstSet = false;
+        foreach (int id in selectedSquad)
+        {
+            if (!activeCards.TryGetValue(id, out CardView v) || v == null) continue;
+            count++;
+            baseStrength += v.data.strength;
+            if (!firstSet) { first = v.data.tribe; firstSet = true; }
+            else if (v.data.tribe != first) sameTribe = false;
+        }
+        if (firstSet) tribeName = TribeName(first);
+    }
+
+    void WarnIfWeak(int[] squad, int targetStrength, string what)
+    {
+        SquadStats(out _, out int baseStrength, out bool sameTribe, out _);
+        if (!sameTribe) Msg("Внимание: в отряде разные племена — сервер атаку отклонит.");
+        else if (baseStrength <= targetStrength)
+            Msg("База отряда " + baseStrength + " ≤ " + what + " " + targetStrength + ". Может не пройти (если нет бонусов свойств).");
+    }
+
+    void UpdateSquadInfo()
+    {
+        if (squadInfoText == null) return;
+        string modeStr = mode == ActionMode.Reinforce ? "РЕЖИМ: УСИЛЕНИЕ" : "РЕЖИМ: АТАКА";
+        if (selectedSquad.Count == 0)
+        {
+            squadInfoText.text = modeStr + "\nОтряд пуст. Клик по своей руке — выбрать карты.";
+        }
+        else
+        {
+            SquadStats(out int count, out int strength, out bool sameTribe, out string tribeName);
+            string tribePart = sameTribe ? tribeName : "РАЗНЫЕ ПЛЕМЕНА!";
+            squadInfoText.text = modeStr + $"\nОтряд: {count} карт · {tribePart} · сила {strength}";
+        }
+
+        if (reinforceButton != null)
+        {
+            var label = reinforceButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null) label.text = mode == ActionMode.Reinforce ? "→ В режим атаки" : "Усилить защиту";
+        }
+    }
+
+    static string PhaseName(Phase p)
+    {
+        switch (p)
+        {
+            case Phase.Update: return "Обновление";
+            case Phase.Trophy: return "Сбор трофеев";
+            case Phase.Draw: return "Добор";
+            case Phase.Action: return "Действия";
+            default: return p.ToString();
+        }
+    }
+
+    static string TribeName(Tribe t)
+    {
+        switch (t)
+        {
+            case Tribe.Ogres: return "Людоеды";
+            case Tribe.Beasts: return "Звери";
+            case Tribe.Vari: return "Вари";
+            case Tribe.Ishary: return "Ишари";
+            case Tribe.Unique: return "Белая тварь";
+            default: return "Базовый";
+        }
+    }
+
+    // Короткое сообщение игроку (гаснет через несколько секунд).
+    void Msg(string text)
+    {
+        Debug.Log(text);
+        if (messageText == null) return;
+        messageText.text = text;
+        if (messageRoutine != null) StopCoroutine(messageRoutine);
+        messageRoutine = StartCoroutine(ClearMessageAfter(4f));
+    }
+
+    IEnumerator ClearMessageAfter(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+        if (messageText != null) messageText.text = "";
     }
 
     // Обновление своей руки
@@ -191,7 +337,7 @@ public class UIManager : MonoBehaviour
             CardData card = player.hand[i];
             GameObject cardObj = Instantiate(cardPrefab, container);
             CardView view = cardObj.GetComponent<CardView>();
-            view.cardId = card.id;
+            view.Bind(card);
             view.currentZone = zone;
             view.ownerPlayerId = player.netId.GetHashCode();
             view.isLocalPlayer = true;
@@ -199,6 +345,7 @@ public class UIManager : MonoBehaviour
         }
 
         container.GetComponent<HandFanLayout>()?.UpdateFan();
+        UpdateSquadInfo();
     }
 
     // Рука противника
@@ -252,7 +399,7 @@ public class UIManager : MonoBehaviour
             rt.localScale = Vector3.one;
             rt.anchoredPosition = Vector2.zero;
 
-            view.cardId = card.id;
+            view.Bind(card);
             view.currentZone = zone;
             view.ownerPlayerId = 0;
             view.isLocalPlayer = false;
@@ -278,11 +425,17 @@ public class UIManager : MonoBehaviour
         for (int i = 0; i < list.Count; i++)
         {
             CardData card = list[i];
-            if (!activeCards.ContainsKey(card.id))
+            if (activeCards.TryGetValue(card.id, out CardView existing) && existing != null)
+            {
+                // Карта уже на столе — обновим данные (зёрна, защита могли измениться)
+                existing.Bind(card);
+                existing.currentZone = zone;
+            }
+            else
             {
                 GameObject cardObj = Instantiate(cardPrefab, container);
                 CardView view = cardObj.GetComponent<CardView>();
-                view.cardId = card.id;
+                view.Bind(card);
                 view.currentZone = zone;
                 view.ownerPlayerId = owner.netId.GetHashCode();
                 view.isLocalPlayer = owner.isOwned;
@@ -322,7 +475,18 @@ public class UIManager : MonoBehaviour
     public void UpdatePhaseDisplay(Phase newPhase)
     {
         if (phaseText != null)
-            phaseText.text = "Фаза: " + newPhase.ToString();
+            phaseText.text = "Фаза: " + PhaseName(newPhase);
+
+        // Вне фазы Действий сбрасываем боевой выбор
+        if (newPhase != Phase.Action)
+        {
+            ClearSquad();
+            mode = ActionMode.Attack;
+            UpdateSquadInfo();
+        }
+        // Окно трофея актуально только в фазе Трофеев
+        if (newPhase != Phase.Trophy && trophyPanel != null)
+            trophyPanel.SetActive(false);
 
         if (endTurnButton != null)
         {
@@ -347,13 +511,49 @@ public class UIManager : MonoBehaviour
             endTurnButton.interactable = false;
     }
 
-    // Сервер просит выбрать судьбу спелых пленных.
-    // TODO: показать настоящее окно с кнопками "Убить" / "Магия" по каждому пленному.
-    // Кнопки должны вызывать player.CmdResolveTrophy(prisonerId, TrophyChoice.Kill | UseMagic).
+    // Сервер просит выбрать судьбу спелых пленных (когда autoResolveTrophy = false).
     public void ShowTrophyPrompt(Player player, int[] prisonerIds)
     {
-        if (prisonerIds == null) return;
-        Debug.Log($"Нужно выбрать трофей для {prisonerIds.Length} пленных. " +
-                  "Подключи UI и вызови player.CmdResolveTrophy(id, choice).");
+        if (prisonerIds == null || prisonerIds.Length == 0) return;
+        trophyPlayer = player;
+        trophyQueue = new List<int>(prisonerIds);
+
+        if (trophyPanel == null)
+        {
+            // Окна нет — подскажем, как вызвать команду вручную.
+            Debug.LogWarning($"Нет trophyPanel. Спелых пленных: {prisonerIds.Length}. " +
+                             "Вызови player.CmdResolveTrophy(id, choice) или включи Auto Resolve Trophy.");
+            return;
+        }
+        ShowNextTrophy();
+    }
+
+    void ShowNextTrophy()
+    {
+        if (trophyQueue.Count == 0)
+        {
+            if (trophyPanel != null) trophyPanel.SetActive(false);
+            return;
+        }
+
+        int prisonerId = trophyQueue[0];
+        if (trophyPanel != null) trophyPanel.SetActive(true);
+
+        if (trophyPromptText != null)
+        {
+            string name = "пленный";
+            if (activeCards.TryGetValue(prisonerId, out CardView v) && v != null)
+                name = v.data.cardName;
+            trophyPromptText.text = $"Пленный «{name}» созрел.\nЗабрать в трофей (зёрна засчитаются) или использовать магию?";
+        }
+    }
+
+    void ResolveCurrentTrophy(TrophyChoice choice)
+    {
+        if (trophyPlayer == null || trophyQueue.Count == 0) return;
+        int prisonerId = trophyQueue[0];
+        trophyQueue.RemoveAt(0);
+        trophyPlayer.CmdResolveTrophy(prisonerId, choice);
+        ShowNextTrophy();
     }
 }

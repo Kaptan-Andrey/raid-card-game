@@ -2,6 +2,7 @@ using Mirror;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using TMPro;
 
 public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
 {
@@ -9,6 +10,18 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     [HideInInspector] public ZoneType currentZone;
     [HideInInspector] public int ownerPlayerId;
     [HideInInspector] public bool isLocalPlayer;
+    [HideInInspector] public CardData data;   // данные карты для отрисовки (если карта лицом)
+
+    [Header("Визуал карты (все поля необязательны — заполняй те, что есть на префабе)")]
+    public GameObject faceRoot;          // вся лицевая часть карты
+    public GameObject backRoot;          // рубашка (показывается у чужих/колоды)
+    public TMP_Text nameText;            // имя карты
+    public TMP_Text strengthText;        // сила (число в углу)
+    public TMP_Text tribeTypeText;       // племя / тип
+    public TMP_Text grainsText;          // сводка зёрен ("●2 ○1")
+    public Image backgroundImage;        // фон — красим по племени/типу
+    public GameObject defenderMark;      // значок "карта стоит в Защите"
+    public GameObject selectionBorder;   // рамка/подсветка выбора в отряд
 
     private Canvas canvas;
     private RectTransform rectTransform;
@@ -23,6 +36,85 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         canvas = GetComponentInParent<Canvas>();
     }
 
+    // ---- Отрисовка ----
+    // Привязать карту лицом: запоминает данные и обновляет тексты/цвет.
+    public void Bind(CardData card)
+    {
+        data = card;
+        cardId = card.id;
+
+        ShowFace();
+
+        if (nameText) nameText.text = card.cardName;
+        if (strengthText) strengthText.text = card.cardType == CardType.Magic ? "" : card.strength.ToString();
+        if (tribeTypeText) tribeTypeText.text = TribeTypeLabel(card);
+        if (grainsText) grainsText.text = GrainsLabel(card);
+        if (defenderMark) defenderMark.SetActive(card.attachedToId != 0);
+        if (backgroundImage) backgroundImage.color = ColorFor(card);
+
+        SetSelected(IsSelectedForSquad);
+    }
+
+    void ShowFace()
+    {
+        if (faceRoot) faceRoot.SetActive(true);
+        if (backRoot) backRoot.SetActive(false);
+    }
+
+    public void SetAsCardBack()
+    {
+        if (faceRoot) faceRoot.SetActive(false);
+        if (backRoot) backRoot.SetActive(true);
+        if (canvasGroup) canvasGroup.blocksRaycasts = false;
+        isLocalPlayer = false;
+    }
+
+    static string TribeTypeLabel(CardData c)
+    {
+        if (c.cardType == CardType.Settler) return "Поселенец";
+        if (c.cardType == CardType.Magic) return "Магия";
+        switch (c.tribe)
+        {
+            case Tribe.Ogres: return "Людоеды";
+            case Tribe.Beasts: return "Звери";
+            case Tribe.Vari: return "Вари";
+            case Tribe.Ishary: return "Ишари";
+            case Tribe.Unique: return "Белая тварь";
+            default: return "Монстр";
+        }
+    }
+
+    // Сводка зёрен: для поселенца — его "урожай", для магии — её значки.
+    static string GrainsLabel(CardData c)
+    {
+        int d, l, k;
+        if (c.cardType == CardType.Magic && c.magicGrains != null && c.magicGrains.Length >= 3)
+        { d = c.magicGrains[0]; l = c.magicGrains[1]; k = c.magicGrains[2]; }
+        else { d = c.darkGrains; l = c.lightGrains; k = c.calmGrains; }
+
+        string s = "";
+        if (d > 0) s += "●" + d + " ";   // тёмное
+        if (l > 0) s += "○" + l + " ";   // светлое
+        if (k > 0) s += "◐" + k + " ";   // покоя
+        return s.Trim();
+    }
+
+    static Color ColorFor(CardData c)
+    {
+        if (c.cardType == CardType.Settler) return new Color(0.85f, 0.78f, 0.55f); // песочный
+        if (c.cardType == CardType.Magic)   return new Color(0.55f, 0.45f, 0.75f); // фиолетовый
+        switch (c.tribe)
+        {
+            case Tribe.Ogres:  return new Color(0.80f, 0.45f, 0.40f);
+            case Tribe.Beasts: return new Color(0.55f, 0.70f, 0.45f);
+            case Tribe.Vari:   return new Color(0.45f, 0.65f, 0.78f);
+            case Tribe.Ishary: return new Color(0.50f, 0.50f, 0.58f);
+            case Tribe.Unique: return new Color(0.92f, 0.92f, 0.92f);
+            default:           return new Color(0.70f, 0.70f, 0.70f);
+        }
+    }
+
+    // ---- Перетаскивание (осталось как было) ----
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (!isLocalPlayer)
@@ -62,16 +154,6 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         }
     }
 
-    bool CanClick()
-    {
-        if (GameManager.Instance == null) { Debug.Log("Can't click: GameManager is null"); return false; }
-        if (GameManager.Instance.currentPhase != Phase.Draw) { Debug.Log("Can't click: not Draw phase, current=" + GameManager.Instance.currentPhase); return false; }
-        Player localPlayer = NetworkClient.connection?.identity?.GetComponent<Player>();
-        if (localPlayer == null) { Debug.Log("Can't click: localPlayer is null"); return false; }
-        if (GameManager.Instance.players.IndexOf(localPlayer) != GameManager.Instance.currentPlayerIndex) { Debug.Log("Can't click: not your turn"); return false; }
-        return (currentZone == ZoneType.Forest || currentZone == ZoneType.Deck);
-    }
-
     public void OnPointerClick(PointerEventData eventData)
     {
         if (GameManager.Instance == null) return;
@@ -88,22 +170,17 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
             return;
         }
 
-        // Фаза действий — выбор отряда и атака (через UIManager)
+        // Фаза действий — выбор отряда, атака, усиление (через UIManager)
         if (phase == Phase.Action)
             UIManager.Instance?.HandleActionClick(this, localPlayer);
     }
 
-    // Подсветка выбранной для отряда карты (масштаб, т.к. позицию задаёт веер)
+    // Подсветка выбранной для отряда карты
     public bool IsSelectedForSquad;
     public void SetSelected(bool on)
     {
         IsSelectedForSquad = on;
+        if (selectionBorder) selectionBorder.SetActive(on);
         transform.localScale = on ? Vector3.one * 1.12f : Vector3.one;
-    }
-
-    public void SetAsCardBack()
-    {
-        canvasGroup.blocksRaycasts = false;
-        isLocalPlayer = false;
     }
 }
