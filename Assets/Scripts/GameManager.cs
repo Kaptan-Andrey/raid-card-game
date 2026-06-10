@@ -108,6 +108,20 @@ public class GameManager : NetworkBehaviour
             settlerDeck.RemoveAt(0);
         }
 
+        // Свойство Рейдера «Морра»: убрать из игры поселенцев с < 2 зёрен
+        if (reiderTarget.Count > 0 && reiderTarget[0].cardName == "Морра")
+        {
+            for (int i = reidTargets.Count - 1; i >= 0; i--)
+            {
+                var c = reidTargets[i];
+                if (c.darkGrains + c.lightGrains + c.calmGrains < 2)
+                {
+                    discard.Add(c);
+                    reidTargets.RemoveAt(i);
+                }
+            }
+        }
+
         // Лес — 4 верхние карты колоды монстров
         for (int i = 0; i < 4; i++)
         {
@@ -148,6 +162,16 @@ public class GameManager : NetworkBehaviour
     [Server]
     void DoUpdatePhase()
     {
+        // Свойство Рейдера «Габи»: в начале каждого хода сбросить Лес и выложить новый
+        if (reiderTarget.Count > 0 && reiderTarget[0].cardName == "Габи")
+        {
+            for (int i = forest.Count - 1; i >= 0; i--)
+            {
+                discard.Add(forest[i]);
+                forest.RemoveAt(i);
+            }
+        }
+
         // Пополнение Леса до 4
         while (forest.Count < 4 && monsterDeck.Count > 0)
         {
@@ -342,7 +366,7 @@ public class GameManager : NetworkBehaviour
         foreach (var c in squad)
         {
             if (c.tribe != tribe) return;
-            squadStrength += c.strength;
+            squadStrength += GetEffectiveStrength(c, attacker, 0);
         }
 
         if (targetZone == ZoneType.Reid || targetZone == ZoneType.Reider)
@@ -399,9 +423,10 @@ public class GameManager : NetworkBehaviour
         foreach (var c in squad)
         {
             CardData card = c;
-            if (card.isAdferous)
+            if (!CanBeDefender(card))
             {
                 // Адферные твари сбрасываются после атаки, не становятся Защитой
+                // (исключение — Фаун: он может оставаться в защите)
                 card.attachedToId = 0;
                 discard.Add(card);
             }
@@ -439,7 +464,7 @@ public class GameManager : NetworkBehaviour
             int idx = IndexInList(p.hand, id);
             if (idx < 0) return;
             CardData c = p.hand[idx];
-            if (c.isAdferous) return; // адферные не могут быть Защитой
+            if (!CanBeDefender(c)) return; // адферные не могут быть Защитой (кроме Фауна)
             add.Add(c);
         }
 
@@ -465,8 +490,61 @@ public class GameManager : NetworkBehaviour
     {
         int s = 0;
         foreach (var c in owner.field)
-            if (c.attachedToId == prisonerId) s += c.strength;
+            if (c.attachedToId == prisonerId) s += GetEffectiveStrength(c, owner, prisonerId);
         return s;
+    }
+
+    // ---- Эффекты карт, влияющие на силу ----
+    [Server]
+    bool CanBeDefender(CardData c) => !c.isAdferous || c.cardName == "Фаун";
+
+    // Сила карты с учётом её свойства. defendingPrisonerId — пленный, которого
+    // эта карта защищает (0, если карта в атаке / не в защите).
+    [Server]
+    int GetEffectiveStrength(CardData card, Player owner, int defendingPrisonerId)
+    {
+        int s = card.strength;
+        switch (card.cardName)
+        {
+            case "Мёртвый Ош":
+                // Сила = сумме сил карт в Трофее (кроме поселенцев). TODO: + «Вава».
+                s = 0;
+                foreach (var t in owner.trophies)
+                    if (t.cardType != CardType.Settler) s += t.strength;
+                break;
+            case "Обжора":
+                // +сумма макс. зёрен своих пленных (кроме «С Зёрнами Покоя»)
+                s += SumPrisonerGrains(owner, excludeCalm: true);
+                break;
+            case "Щенок":
+                // +макс. зёрна пленного, которого он защищает
+                if (defendingPrisonerId != 0)
+                    s += PrisonerMaxGrains(owner, defendingPrisonerId);
+                break;
+        }
+        return s;
+    }
+
+    [Server]
+    int SumPrisonerGrains(Player owner, bool excludeCalm)
+    {
+        int sum = 0;
+        foreach (var c in owner.field)
+        {
+            if (c.cardType != CardType.Settler || c.attachedToId != 0) continue;
+            if (excludeCalm && c.calmGrains > 0) continue; // «С Зёрнами Покоя»
+            sum += c.darkGrains + c.lightGrains + c.calmGrains;
+        }
+        return sum;
+    }
+
+    [Server]
+    int PrisonerMaxGrains(Player owner, int prisonerId)
+    {
+        foreach (var c in owner.field)
+            if (c.id == prisonerId && c.cardType == CardType.Settler)
+                return c.darkGrains + c.lightGrains + c.calmGrains;
+        return 0;
     }
 
     [Server]
