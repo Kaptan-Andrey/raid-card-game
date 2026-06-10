@@ -74,19 +74,31 @@ public class CardView : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
     public void OnPointerClick(PointerEventData eventData)
     {
-        if (currentZone != ZoneType.Forest && currentZone != ZoneType.Deck) return;
+        if (GameManager.Instance == null) return;
         Player localPlayer = NetworkClient.connection?.identity?.GetComponent<Player>();
         if (localPlayer == null) return;
 
-        switch (currentZone)
+        Phase phase = GameManager.Instance.currentPhase;
+
+        // Фаза добора — клик по Лесу/Колоде добирает карту
+        if (phase == Phase.Draw && (currentZone == ZoneType.Forest || currentZone == ZoneType.Deck))
         {
-            case ZoneType.Forest:
-                localPlayer.CmdDrawFromForest();
-                break;
-            case ZoneType.Deck:
-                localPlayer.CmdDrawFromDeck();
-                break;
+            if (currentZone == ZoneType.Forest) localPlayer.CmdDrawFromForest();
+            else localPlayer.CmdDrawFromDeck();
+            return;
         }
+
+        // Фаза действий — выбор отряда и атака (через UIManager)
+        if (phase == Phase.Action)
+            UIManager.Instance?.HandleActionClick(this, localPlayer);
+    }
+
+    // Подсветка выбранной для отряда карты (масштаб, т.к. позицию задаёт веер)
+    public bool IsSelectedForSquad;
+    public void SetSelected(bool on)
+    {
+        IsSelectedForSquad = on;
+        transform.localScale = on ? Vector3.one * 1.12f : Vector3.one;
     }
 
     public void SetAsCardBack()

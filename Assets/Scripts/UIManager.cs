@@ -32,6 +32,7 @@ public class UIManager : MonoBehaviour
 
     private Dictionary<int, CardView> activeCards = new Dictionary<int, CardView>();
     private CardView deckIndicator; // объект-рубашка для колоды
+    private HashSet<int> selectedSquad = new HashSet<int>(); // выбранные карты руки для атаки
 
     void Awake()
     {
@@ -110,10 +111,71 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    // ---- Выбор отряда и атака (клик в фазе действий) ----
+    public void HandleActionClick(CardView view, Player localPlayer)
+    {
+        if (GameManager.Instance == null) return;
+        if (GameManager.Instance.players.IndexOf(localPlayer) != GameManager.Instance.currentPlayerIndex) return;
+
+        ZoneType myHand = localPlayer.playerIndex == 0 ? ZoneType.Player1Hand : ZoneType.Player2Hand;
+
+        // Клик по своей карте руки — добавить/убрать из отряда
+        if (view.currentZone == myHand)
+        {
+            ToggleSquad(view);
+            return;
+        }
+
+        // Клик по цели — атаковать выбранным отрядом
+        int[] squad = SquadArray();
+        if (squad.Length == 0) { Debug.Log("Сначала выберите карты отряда (клик по руке)."); return; }
+
+        if (view.currentZone == ZoneType.Reid || view.currentZone == ZoneType.Reider)
+        {
+            localPlayer.CmdAttack(squad, view.currentZone, view.cardId, -1);
+            ClearSquad();
+        }
+        else if (view.currentZone == ZoneType.Player1Field || view.currentZone == ZoneType.Player2Field)
+        {
+            int targetPlayerIndex = view.currentZone == ZoneType.Player1Field ? 0 : 1;
+            if (targetPlayerIndex == localPlayer.playerIndex) return; // свой пленный — не цель атаки
+            localPlayer.CmdAttack(squad, view.currentZone, view.cardId, targetPlayerIndex);
+            ClearSquad();
+        }
+    }
+
+    void ToggleSquad(CardView view)
+    {
+        if (selectedSquad.Contains(view.cardId))
+        {
+            selectedSquad.Remove(view.cardId);
+            view.SetSelected(false);
+        }
+        else
+        {
+            selectedSquad.Add(view.cardId);
+            view.SetSelected(true);
+        }
+    }
+
+    int[] SquadArray()
+    {
+        var list = new List<int>(selectedSquad);
+        return list.ToArray();
+    }
+
+    void ClearSquad()
+    {
+        foreach (int id in selectedSquad)
+            if (activeCards.TryGetValue(id, out CardView v) && v != null) v.SetSelected(false);
+        selectedSquad.Clear();
+    }
+
     // Обновление своей руки
     public void RefreshOwnHand(Player player)
     {
         if (!player.isOwned) return;
+        selectedSquad.Clear(); // рука перерисовывается — сбрасываем выбор
         Transform container = player.playerIndex == 0 ? Player1HandContainer : Player2HandContainer;
         ZoneType zone = player.playerIndex == 0 ? ZoneType.Player1Hand : ZoneType.Player2Hand;
 
