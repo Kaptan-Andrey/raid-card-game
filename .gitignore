@@ -32,3 +32,7 @@ Thumbs.db
 
 # Editor upload leftovers
 *.tabby-upload
+
+# TextMesh Pro essentials — импортируются в Unity локально (Window > TextMeshPro > Import TMP Essential Resources)
+/[Aa]ssets/TextMesh Pro/
+/[Aa]ssets/TextMesh Pro.meta
