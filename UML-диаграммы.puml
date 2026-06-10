@@ -1,0 +1,163 @@
+' ============================================================
+'  UML-диаграммы для дипломной записки «Компьютерная игра Рейд»
+'  Как получить картинки: открыть https://www.plantuml.com/plantuml
+'  вставить блок (от @startuml до @enduml) — скачать PNG/SVG.
+'  Каждую диаграмму рендерить отдельно.
+' ============================================================
+
+' ---------- 1. Диаграмма классов ----------
+@startuml class_diagram
+title Диаграмма классов — «Рейд»
+hide empty members
+
+class GameManager {
+  +SyncList<CardData> monsterDeck
+  +SyncList<CardData> settlerDeck
+  +SyncList<CardData> forest
+  +SyncList<CardData> reidTargets
+  +SyncList<CardData> discard
+  +Phase currentPhase
+  +int currentPlayerIndex
+  +int winnerIndex
+  --
+  +Attack(squad, target)
+  +Reinforce(prisoner, cards)
+  +UseGrain(...)
+  +DiscardMagicForGrains(...)
+  +PlayerResolveTrophy(...)
+  -CheckVictory(Player)
+}
+
+class Player {
+  +int playerIndex
+  +int handCount
+  +SyncList<CardData> hand
+  +SyncList<CardData> field
+  +SyncList<CardData> trophies
+  --
+  +CmdAttack(...)
+  +CmdReinforce(...)
+  +CmdUseGrain(...)
+  +CmdResolveTrophy(...)
+  +TargetTrophyPrompt(...)
+}
+
+struct CardData {
+  +int id
+  +CardType cardType
+  +Tribe tribe
+  +int strength
+  +string cardName
+  +bool isAdferous
+  +int attachedToId
+  +int darkGrains
+  +int lightGrains
+  +int calmGrains
+  +int[] grainSequence
+}
+
+class CardDatabase {
+  +{static} BuildMonsterDeck()
+  +{static} BuildSettlerDeck()
+}
+
+class UIManager {
+  +RefreshOwnHand(Player)
+  +RefreshField(Player)
+  +HandleActionClick(...)
+  +ShowTrophyPrompt(...)
+}
+
+class CardView
+class AutoHost
+
+GameManager "1" o-- "0..2" Player : управляет
+Player "1" *-- "*" CardData : hand/field/trophies
+GameManager ..> CardData
+GameManager ..> CardDatabase : строит колоды
+UIManager ..> Player : команды
+UIManager "1" *-- "*" CardView : отрисовка
+Player ..> UIManager : обновления
+AutoHost ..> GameManager : запуск хоста
+
+note bottom of GameManager
+  GameManager и Player —
+  NetworkBehaviour (Mirror),
+  логика на сервере
+end note
+@enduml
+
+
+' ---------- 2. Диаграмма вариантов использования ----------
+@startuml use_case
+title Диаграмма вариантов использования — «Рейд»
+left to right direction
+actor "Игрок" as P
+actor "Сервер\n(хост)" as S
+
+rectangle "Компьютерная игра «Рейд»" {
+  usecase "Подключиться к партии" as UC1
+  usecase "Добрать карты" as UC2
+  usecase "Выбрать отряд" as UC3
+  usecase "Атаковать цель" as UC4
+  usecase "Усилить защиту" as UC5
+  usecase "Потратить зерно" as UC6
+  usecase "Выбрать судьбу\nпленного (трофей)" as UC7
+  usecase "Завершить ход" as UC8
+  usecase "Проверка правил\nи состояния" as UC9
+}
+
+P --> UC1
+P --> UC2
+P --> UC3
+P --> UC4
+P --> UC5
+P --> UC6
+P --> UC7
+P --> UC8
+UC4 ..> UC3 : <<include>>
+S --> UC9
+UC4 ..> UC9 : <<include>>
+UC6 ..> UC9 : <<include>>
+@enduml
+
+
+' ---------- 3. Диаграмма последовательности — атака ----------
+@startuml sequence_attack
+title Диаграмма последовательности — сценарий «Атака»
+actor Игрок
+participant "Клиент\n(UIManager)" as UI
+participant "Player\n(NetworkBehaviour)" as PL
+participant "GameManager\n(сервер)" as GM
+participant "SyncList\nзон" as SL
+
+Игрок -> UI : клик по картам отряда
+UI -> UI : ToggleSquad() (выделение)
+Игрок -> UI : клик по цели
+UI -> PL : CmdAttack(squad, target)
+PL -> GM : Attack(...)
+GM -> GM : проверка фазы, хода,\nплемени и силы отряда
+alt сила отряда > силы цели
+  GM -> SL : переместить цель в field,\nсбросить защиту, обновить руку
+  SL --> UI : синхронизация (Callback)
+  UI -> Игрок : перерисовка поля
+else сила недостаточна
+  GM --> PL : ход отклонён
+end
+@enduml
+
+
+' ---------- 4. Диаграмма состояний — фазы хода ----------
+@startuml state_phases
+title Диаграмма состояний — фазы хода
+[*] --> Обновление
+Обновление : пополнить Лес,\nповернуть пленных (зёрна)
+Обновление --> Трофеи
+Трофеи : обработать «спелых» пленных\n(Убить / Магия)
+Трофеи --> Добор : нет победы
+Добор : добрать карты\nдо лимита руки (5)
+Добор --> Действия
+Действия : атака, усиление,\nтрата зёрен
+Действия --> Обновление : передать ход сопернику
+Трофеи --> [*] : условие победы\n(4 зерна / 3 одного цвета)
+@enduml
