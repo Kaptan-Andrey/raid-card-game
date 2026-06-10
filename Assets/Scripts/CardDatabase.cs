@@ -2,15 +2,15 @@ using System.Collections.Generic;
 
 // ============================================================================
 //  CardDatabase — все карты игры в одном месте.
-//  Заполнено по фото карт (см. КАРТЫ_КАТАЛОГ.md в корне проекта).
+//  Количества и силы — по фото карт и уточнениям игрока (см. КАРТЫ_КАТАЛОГ.md).
 //
-//  ТОЧНО ИЗВЕСТНО: базовый состав (13), уникальная (1), все поселенцы (13),
-//  и именные карты племён, попавшие на фото.
-//  ПОД ВОПРОСОМ (помечено TODO):
-//    • количества копий именных карт внутри племён (19/19/5/5) — на фото по
-//      одному образцу, поэтому остаток добит обобщёнными картами-заглушками;
-//    • сила Тёмного Пастуха и Белой твари (на фото не читается);
-//    • точные зёрна Поселенца/Поселенки (фото нечёткие).
+//  Колода монстров = 62 карты (19 Людоедов + 19 Зверей + 5 Вари + 5 Ишари
+//  + 13 базового состава + 1 уникальная). Все суммы сходятся.
+//
+//  Осталось под вопросом (TODO):
+//    • сила «Шабаш Зверей» (нет на фото);
+//    • свойства карт как игровые эффекты — пока НЕ реализованы (только сила/тип/зёрна).
+//    • Тёмный Пастух и Белая тварь силы НЕ имеют (особые свойства) → strength 0.
 // ============================================================================
 public static class CardDatabase
 {
@@ -20,38 +20,35 @@ public static class CardDatabase
         int id = 0;
 
         // ---- Большое племя ЛЮДОЕДЫ (19) ----
-        deck.Add(Monster(ref id, "Ош Людоедов", Tribe.Ogres, 4));
-        deck.Add(Monster(ref id, "Арош Людоедов", Tribe.Ogres, 3));
-        deck.Add(Monster(ref id, "Налётчик", Tribe.Ogres, 2));
-        deck.Add(Monster(ref id, "Глиф Людоедов", Tribe.Ogres, 1));
-        PadTribe(deck, ref id, "Людоед", Tribe.Ogres, 3, 19 - 4); // TODO: реальные карты/силы
+        Add(deck, ref id, 2, "Ош Людоедов", Tribe.Ogres, 4);
+        Add(deck, ref id, 9, "Налётчик", Tribe.Ogres, 2);
+        Add(deck, ref id, 4, "Глиф Людоедов", Tribe.Ogres, 1); // +1 к силе, призыв слабых людоедов из Леса
+        Add(deck, ref id, 4, "Арош Людоедов", Tribe.Ogres, 3); // только племенное свойство
 
         // ---- Большое племя ЗВЕРИ (19) ----
-        deck.Add(Monster(ref id, "Обжора", Tribe.Beasts, 1));
-        deck.Add(Monster(ref id, "Щенок", Tribe.Beasts, 2));
-        deck.Add(Monster(ref id, "Ночной Кошмар", Tribe.Beasts, 4));
-        PadTribe(deck, ref id, "Зверь", Tribe.Beasts, 3, 19 - 3); // TODO
+        Add(deck, ref id, 3, "Шабаш Зверей", Tribe.Beasts, 3);   // TODO: реальная сила
+        Add(deck, ref id, 2, "Ночной Кошмар", Tribe.Beasts, 4);
+        Add(deck, ref id, 4, "Обжора", Tribe.Beasts, 1);
+        Add(deck, ref id, 10, "Щенок", Tribe.Beasts, 2);
 
         // ---- Малое племя ВАРИ (5) ----
-        deck.Add(Monster(ref id, "Вари Отшельник", Tribe.Vari, 3));
-        deck.Add(Monster(ref id, "Мёртвый Ош", Tribe.Vari, 5));
-        PadTribe(deck, ref id, "Вари", Tribe.Vari, 3, 5 - 2); // TODO
+        Add(deck, ref id, 3, "Вари Отшельник", Tribe.Vari, 3);
+        Add(deck, ref id, 2, "Мёртвый Ош", Tribe.Vari, 5);
 
         // ---- Малое племя ИШАРИ (5) ----
-        deck.Add(Monster(ref id, "Молодой Ишари", Tribe.Ishary, 3));
-        deck.Add(Monster(ref id, "Древний Ишари", Tribe.Ishary, 3));
-        PadTribe(deck, ref id, "Ишари", Tribe.Ishary, 3, 5 - 2); // TODO
+        Add(deck, ref id, 1, "Древний Ишари", Tribe.Ishary, 3);
+        Add(deck, ref id, 4, "Молодой Ишари", Tribe.Ishary, 3);
 
-        // ---- Базовый состав (13) — известен полностью ----
-        for (int i = 0; i < 4; i++) deck.Add(Monster(ref id, "Круговерт", Tribe.Basic, 6));            // смертный
-        for (int i = 0; i < 2; i++) deck.Add(Monster(ref id, "Адепт горящего", Tribe.Basic, 7));       // смертный
-        for (int i = 0; i < 3; i++) deck.Add(Monster(ref id, "Гунуити", Tribe.Basic, 8, adferous: true));
-        for (int i = 0; i < 2; i++) deck.Add(Monster(ref id, "Багун", Tribe.Basic, 12, adferous: true));
-        deck.Add(Monster(ref id, "Фаун", Tribe.Basic, 10, adferous: true));   // особый: может быть защитой (см. свойство)
-        deck.Add(Monster(ref id, "Тёмный Пастух", Tribe.Basic, 5, adferous: true)); // TODO: сила не читается на фото
+        // ---- Базовый состав (13) ----
+        Add(deck, ref id, 4, "Круговерт", Tribe.Basic, 6);                 // смертный
+        Add(deck, ref id, 2, "Адепт горящего", Tribe.Basic, 7);           // смертный, «Ритуальное сжигание»
+        Add(deck, ref id, 3, "Гунуити", Tribe.Basic, 8, adferous: true);
+        Add(deck, ref id, 2, "Багун", Tribe.Basic, 12, adferous: true);
+        Add(deck, ref id, 1, "Фаун", Tribe.Basic, 10, adferous: true);    // особый: может быть защитой
+        Add(deck, ref id, 1, "Тёмный Пастух", Tribe.Basic, 0, adferous: true); // силы нет
 
         // ---- Уникальная (1) ----
-        deck.Add(Monster(ref id, "Белая тварь", Tribe.Unique, 0, adferous: true)); // TODO: копирует силу цели
+        Add(deck, ref id, 1, "Белая тварь", Tribe.Unique, 0, adferous: true);  // силы нет, копирует цель
 
         return deck; // 62 карты
     }
@@ -62,49 +59,46 @@ public static class CardDatabase
         int id = 100;
         var D = GrainColor.Dark; var L = GrainColor.Light; var C = GrainColor.Calm;
 
-        // 3 Рейдера — каждый своего цвета, макс 3 зерна
-        deck.Add(Settler(ref id, "Мыслав", L, L, L)); // TODO: цвет сверить (на фото похоже на светлый)
-        deck.Add(Settler(ref id, "Морра", C, C, C));  // Зёрна Покоя
-        deck.Add(Settler(ref id, "Габи", D, D, D));
+        // 3 Рейдера (по 1), макс 3 зерна своего цвета
+        AddSettler(deck, ref id, 1, "Мыслав", L, L, L); // без особого свойства
+        AddSettler(deck, ref id, 1, "Морра", C, C, C);  // Зёрна Покоя
+        AddSettler(deck, ref id, 1, "Габи", D, D, D);
 
-        // 3 Поселенца — тёмные (TODO: точное число делений сверить, на фото видно 0/1)
-        for (int i = 0; i < 3; i++) deck.Add(Settler(ref id, "Поселенец", D));
-        // 3 Поселенки — светлые (TODO: чёткого фото нет)
-        for (int i = 0; i < 3; i++) deck.Add(Settler(ref id, "Поселенка", L));
+        // Поселенцы/Поселенки — максимум 1 зерно (трекер 0–1)
+        AddSettler(deck, ref id, 2, "Поселенец", D);
+        AddSettler(deck, ref id, 2, "Поселенка", L);
+
         // 2 Сестры Оссим — Покоя, макс 2 («С Зёрнами Покоя»)
-        for (int i = 0; i < 2; i++) deck.Add(Settler(ref id, "Сестра Оссим", C, C));
-        // 1 Тёмный Талант — тёмные, макс 2
-        deck.Add(Settler(ref id, "Тёмный Талант", D, D));
-        // 1 Светлый Талант — светлые, макс 2
-        deck.Add(Settler(ref id, "Светлый Талант", L, L));
+        AddSettler(deck, ref id, 2, "Сестра Оссим", C, C);
 
-        return deck; // 13 карт
+        // Таланты — макс 2 своего цвета
+        AddSettler(deck, ref id, 1, "Тёмный Талант", D, D);
+        AddSettler(deck, ref id, 1, "Светлый Талант", L, L);
+
+        return deck;
     }
 
     // Имена карт-Рейдеров (нужно для подготовки зоны Рейда)
     public static bool IsReider(string name) =>
         name == "Мыслав" || name == "Морра" || name == "Габи";
 
-    static CardData Monster(ref int id, string name, Tribe tribe, int strength, bool adferous = false) => new CardData
-    {
-        id = id++,
-        cardName = name,
-        cardType = CardType.Monster,
-        tribe = tribe,
-        strength = strength,
-        isAdferous = adferous,
-        attachedToId = 0,
-        isDefender = false
-    };
-
-    // Добивает племя обобщёнными картами до нужного количества (TODO: заменить на реальные).
-    static void PadTribe(List<CardData> deck, ref int id, string baseName, Tribe tribe, int strength, int count)
+    static void Add(List<CardData> deck, ref int id, int count, string name, Tribe tribe, int strength, bool adferous = false)
     {
         for (int i = 0; i < count; i++)
-            deck.Add(Monster(ref id, baseName + " #" + (i + 1), tribe, strength));
+            deck.Add(new CardData
+            {
+                id = id++,
+                cardName = name,
+                cardType = CardType.Monster,
+                tribe = tribe,
+                strength = strength,
+                isAdferous = adferous,
+                attachedToId = 0,
+                isDefender = false
+            });
     }
 
-    static CardData Settler(ref int id, string name, params GrainColor[] grains)
+    static void AddSettler(List<CardData> deck, ref int id, int count, string name, params GrainColor[] grains)
     {
         int dark = 0, light = 0, calm = 0;
         var seq = new int[grains.Length];
@@ -115,19 +109,20 @@ public static class CardDatabase
             else if (grains[i] == GrainColor.Light) light++;
             else calm++;
         }
-        return new CardData
-        {
-            id = id++,
-            cardName = name,
-            cardType = CardType.Settler,
-            strength = 0,           // TODO: сила цели для Рейда (на фото поселенцев силы не видно)
-            darkGrains = dark,      // итог для подсчёта победы
-            lightGrains = light,
-            calmGrains = calm,
-            grainSequence = seq,    // порядок по делениям трекера
-            grainRotationSteps = 0,
-            attachedToId = 0,
-            isDefender = false
-        };
+        for (int n = 0; n < count; n++)
+            deck.Add(new CardData
+            {
+                id = id++,
+                cardName = name,
+                cardType = CardType.Settler,
+                strength = 0,
+                darkGrains = dark,
+                lightGrains = light,
+                calmGrains = calm,
+                grainSequence = (int[])seq.Clone(),
+                grainRotationSteps = 0,
+                attachedToId = 0,
+                isDefender = false
+            });
     }
 }
