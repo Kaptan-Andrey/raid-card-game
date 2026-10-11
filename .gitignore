@@ -36,3 +36,12 @@ Thumbs.db
 # TextMesh Pro essentials — импортируются в Unity локально (Window > TextMeshPro > Import TMP Essential Resources)
 /[Aa]ssets/TextMesh Pro/
 /[Aa]ssets/TextMesh Pro.meta
+
+# Python
+__pycache__/
+
+# Чужие видеореференсы — в репозиторий не кладём
+/concepts/самураи*.gif
+
+# Покадровая выкладка заставки — пересобирается build_intro.py
+/concepts/Клод/frame_*.png
